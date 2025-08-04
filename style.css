@@ -1,0 +1,98 @@
+body {
+  background: #1e1e1e;
+  color: #f0f0f0;
+  font-family: 'Arial', sans-serif;
+  margin: 0;
+  padding: 0;
+}
+h1 {
+  text-align: center;
+  padding: 20px;
+  margin: 0;
+  background: #333;
+  border-bottom: 2px solid #555;
+}
+#buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 10px;
+  gap: 10px;
+  margin-top: 20px;
+}
+#buttons button {
+  background: #444;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+  position: relative;
+}
+#buttons button:hover {
+  background: #666;
+}
+#output {
+  margin: 20px auto;
+  padding: 20px;
+  max-width: 800px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #2e2e2e;
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+}
+.message {
+  padding: 10px;
+  margin-top: 10px;
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 4px;
+  opacity: 0;
+  animation: slideDownFadeIn 0.5s forwards;
+  transition: all 0.3s ease;
+}
+.message.new {
+  font-size: 1.5em;
+  text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.8);
+}
+@keyframes slideDownFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+#pendingInput {
+  width: 100%;
+  padding: 5px;
+  font-size: 1.2em;
+  border: 1px solid #666;
+  border-radius: 4px;
+  animation: inputFocusPulse 2s infinite;
+}
+@keyframes inputFocusPulse {
+  0% {
+    border-color: #666;
+  }
+  50% {
+    border-color: #aaa;
+  }
+  100% {
+    border-color: #666;
+  }
+}
+.shortcut-key {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  color: #fff;
+} 
