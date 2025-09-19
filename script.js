@@ -579,7 +579,7 @@ const Game = {
         "마왕의 방": "마왕"
       };
       const bossName = map[location];
-      if (bossName && !Game.variables.회원[sender].퀘스트완료[bossName]) {
+      if (bossName && !Game.variables.회원[sender].퀘스트완료[bossName] && !Game.variables.회원[sender].보스스토리완료 && !Game.variables.회원[sender].세부방문.includes(location)) {
         return `보스 '${bossName}'의 처치가 완료되지 않았습니다. 반드시 처치 후 이동할 수 있습니다.`;
       }
       return null;
@@ -1021,7 +1021,7 @@ const Game = {
         case "숙박":
           return !!u && u.세부위치 === "여관";
         case "보스와 전투":
-          return !!u && !u.pendingDecision && u.보스스토리완료 === true && u.보스스토리진행중 === false;
+          return !!u && !u.pendingDecision && u.보스스토리완료 === true;
         default:
           return true;
       }
