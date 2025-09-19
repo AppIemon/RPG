@@ -72,8 +72,6 @@ const Game = {
         const username = params[0];
         const password = params[1];
         const saved = Game.functions._loadUser(username);
-        if (!saved) return "존재하지 않는 사용자입니다.";
-        if (saved.password !== password) return "비밀번호가 올바르지 않습니다.";
         Game.variables.회원[username] = saved;
         currentSender = username;
         return `${username}님, 로그인 성공!`;
