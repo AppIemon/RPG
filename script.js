@@ -205,6 +205,38 @@ const Game = {
       }
     },
 
+    "기술구매": {
+      params: ["기술이름"],
+      getChoices: (sender) => {
+        const u = Game.variables.회원[sender];
+        if (!u) return [];
+        return (Game.skillCache || [])
+          .filter(sk => sk.판매마을 === u.위치)
+          .map(sk => sk.이름);
+      },
+      출력: async (sender, params) => {
+        const u = Game.variables.회원[sender];
+        const skills = await Game.variables.game.기술;
+
+        if (!params[0]) {
+          const list = skills.filter(sk => sk.판매마을 === u.위치);
+          if (!list.length) return `현재 ${u.위치}에서는 구매 가능한 기술이 없습니다.`;
+          let s = "구매 가능한 기술 목록:\n";
+          list.forEach(sk => {
+            s += `${sk.이름} - 가격: ${Game.functions.formatNumber(sk.cost)} 코인 (MP ${sk.MP소모}, 명중률 ${sk.명중률})\n  설명: ${sk.설명}\n`;
+          });
+          return s;
+        }
+
+        const name = params[0];
+        const skill = skills.find(sk => sk.이름 === name && sk.판매마을 === u.위치);
+        if (!skill) return `현재 마을에서 '${name}' 기술은 판매하지 않습니다.`;
+
+    u.pendingDecision = { type: "구매확인", itemType: "기술", item: skill };
+    return `${skill.이름}\n설명: ${skill.설명}\nMP: ${skill.MP소모}, 명중률: ${skill.명중률}\n가격: ${Game.functions.formatNumber(skill.cost)} 코인\n구매하시겠습니까? (예/아니오)`;
+  }
+},
+
     // ───────────────── 탐험/전투 ─────────────────
     "탐험": {
       params: [],
@@ -484,7 +516,7 @@ const Game = {
         const u = Game.variables.회원[sender];
         if (!u) return "로그인 상태가 아닙니다.";
         Game.functions._saveUser(u);
-        return "게임 데이터가 로컬에 저장되었습니다.";
+        return "게임 데이터가 저장되었습니다.";
       }
     },
 
@@ -498,7 +530,16 @@ const Game = {
         if (pend.type === "턴전투" && pend.awaitingConfirmation) {
           pend.awaitingConfirmation = false;
           return Game.functions.턴전투진행(sender, "일반");
+        } else if (pend.type === "구매확인") {
+          const item = pend.item;
+          if (u.코인 < item.cost) { u.pendingDecision = null; return `잔액이 부족합니다. ${Game.functions.formatNumber(item.cost)} 코인이 필요합니다.`; }
+          u.코인 -= item.cost;
+          if (pend.itemType === "장비") u.소유장비.push(item.이름);
+          if (pend.itemType === "기술") u.배운특수능력.push(item);
+          u.pendingDecision = null;
+          return `🎉 '${item.이름}'을(를) 구매했습니다! (남은 코인: ${Game.functions.formatNumber(u.코인)})`;
         }
+
         return "확인할 항목이 없습니다.";
       }
     },
@@ -511,6 +552,10 @@ const Game = {
         if (pend.type === "턴전투" && pend.awaitingConfirmation) {
           u.pendingDecision = null;
           return "전투를 취소하고 탐험을 계속합니다.";
+        }
+        if (pend.type === "구매확인") {
+          u.pendingDecision = null;
+          return "구매를 취소했습니다.";
         }
         u.pendingDecision = null;
         return "취소되었습니다.";
@@ -986,6 +1031,9 @@ const Game = {
       if (u?.pendingDecision?.awaitingConfirmation) {
         return ["예","아니오","상태","저장"].includes(commandName);
       }
+      if (u?.pendingDecision?.type === "구매확인") {
+        return ["예","아니오","상태","저장"].includes(commandName);
+      }
       // 전투 중
       if (u?.pendingDecision?.type === "턴전투") {
         return ["공격","일반","방어","전술","특수","상태","저장"].includes(commandName);
@@ -1020,6 +1068,8 @@ const Game = {
           return !!u && u.세부위치 === "여관";
         case "보스와 전투":
           return !!u && !u.pendingDecision && u.보스스토리완료 === true;
+        case "기술구매":
+          return !!u && Game.skillCache.some(sk=>sk.판매마을===u.위치);
         default:
           return true;
       }
