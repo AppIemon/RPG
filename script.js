@@ -23,11 +23,6 @@ const Game = {
         const username = params[0];
         const password = params[1];
 
-        // 중복 확인 (메모리 + 로컬스토리지)
-        if (Game.variables.회원[username] || Game.functions._loadUser(username)) {
-          return `${username}님은 이미 회원가입이 완료되었습니다.`;
-        }
-
         const memberData = {
           username,
           password,
