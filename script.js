@@ -12,7 +12,9 @@ const Game = {
   tacticsCache: [],
   variables: {
     회원: {},
-    game: {}
+    game: {},
+    rewardMult: 2,
+    maxExp:1000000000
   },
   commands: {
     // ───────────────── 회원/세션 ─────────────────
@@ -55,6 +57,16 @@ const Game = {
 
         // 등록
         Game.variables.회원[username] = memberData;
+        Game.variables.회원[username].getreward = (e,c, mul = 1) => {
+          const user = Game.variables.회원[username]
+          const expReward = e * mul;
+          const coinReward = c * mul;
+          user.경험치 += expReward;
+          user.코인 +=coinReward;
+          
+          return `보상: ${Game.functions.formatNumber(expReward)} 경험치와 ${Game.functions.formatNumber(coinReward)} 코인 지급!\n`;
+        }
+
         Game.functions._saveUser(memberData);
         currentSender = username;
 
@@ -73,6 +85,16 @@ const Game = {
         const password = params[1];
         const saved = Game.functions._loadUser(username);
         Game.variables.회원[username] = saved;
+        Game.variables.회원[username].getreward = (e,c, mul = 1) => {
+          const user = Game.variables.회원[username]
+          const expReward = e * mul;
+          const coinReward = c * mul;
+          user.경험치 += expReward;
+          user.코인 +=coinReward;
+          
+          return `보상: ${Game.functions.formatNumber(expReward)} 경험치와 ${Game.functions.formatNumber(coinReward)} 코인 지급!\n`;
+        }
+
         currentSender = username;
         return `${username}님, 로그인 성공!`;
       }
@@ -89,7 +111,7 @@ const Game = {
         status += `체력: ${Game.functions.formatNumber(u.체력)} / ${Game.functions.formatNumber(Game.functions.getMaxHP(u))}\n`;
         status += `MP: ${Game.functions.formatNumber(u.MP)} / ${Game.functions.formatNumber(Game.functions.getMaxMP(u))}\n`;
         status += `공격력: ${Game.functions.formatNumber(u.공격력)}\n`;
-        status += `경험치: ${Game.functions.formatNumber(u.경험치)}\n`;
+        status += `경험치: ${Game.functions.formatNumber(u.경험치)} / ${Game.functions.formatNumber(Game.functions.필요경험치계산(sender))}\n`;
         status += `레벨: ${u.레벨}\n`;
         status += `소유 장비: ${u.소유장비.length ? u.소유장비.join(', ') : '없음'}\n`;
         status += `장착 장비: ${u.장착장비.length ? u.장착장비.join(', ') : '없음'}\n`;
@@ -294,7 +316,7 @@ const Game = {
           }
         }
 
-        if (chance < 0.60) {
+        if (chance < 0.4) {
           const monstersData = await Game.variables.game.몬스터;
           const monsters = monstersData?.[u.위치]?.[u.세부위치] || [];
           if (monsters.length === 0) return "주변에 적이 없어 탐험을 계속합니다.";
@@ -308,7 +330,8 @@ const Game = {
             buffs: { user: {}, monster: {} }
           };
           u.pendingDecision = battle;
-          return Game.functions.턴전투진행(sender, "일반");
+          encount_text = `${monster.이름}에게 기습당했습니다! 전투를 시작합니다!\n`;
+          return Game.functions.턴전투진행(sender, "일반", encount_text);
         }
 
         const monstersData = await Game.variables.game.몬스터;
@@ -324,6 +347,7 @@ const Game = {
           awaitingConfirmation: true,
           buffs: { user: {}, monster: {} }
         };
+
         return `${monster.이름}을(를) 발견했습니다. 전투를 시작하시겠습니까? (예/아니오)`;
       }
     },
@@ -566,11 +590,11 @@ const Game = {
   // ───────────────── 내부 함수 ─────────────────
   functions: {
     회원확인: (sender) => !!Game.variables.회원[sender],
-
     레벨업확인: (sender) => {
       const u = Game.variables.회원[sender];
       let msg = "";
-      let threshold = Math.floor(u.레벨 ** 4 * 5);
+      let rate = 1 - Math.sqrt(1-Math.pow(u.레벨*0.01, 4));
+      let threshold = Game.variables.maxExp * rate;
       while (u.경험치 >= threshold) {
         u.경험치 -= threshold;
         u.레벨++;
@@ -581,9 +605,16 @@ const Game = {
         u.체력 = newMaxHP;
         u.MP = newMaxMP;
         msg += `축하합니다! 레벨 ${u.레벨}로 업그레이드되었습니다. (공격력 +${Game.functions.formatNumber(attackIncrease)}, 체력 회복됨: ${Game.functions.formatNumber(newMaxHP)}, MP 회복됨: ${Game.functions.formatNumber(newMaxMP)})\n`;
-        threshold = Math.floor((u.레벨 + 1) ** 4 * 5);
+        rate = 1 - Math.sqrt(1-Math.pow(u.레벨*0.01, 4));
+        threshold = Game.variables.maxExp * rate;;
       }
       return msg;
+    },
+    필요경험치계산: (sender) => {
+      const u = Game.variables.회원[sender];
+      let rate = 1 - Math.sqrt(1-Math.pow(u.레벨*0.01, 4));
+      let threshold = Game.variables.maxExp * rate;
+      return threshold;
     },
 
     보스확인: (sender, location) => {
@@ -767,13 +798,13 @@ const Game = {
     },
 
     // 전투 메인 루프
-    턴전투진행: async (sender, action) => {
+    턴전투진행: async (sender, action, basetxt = "") => {
       const user = Game.variables.회원[sender];
       let battle = user?.pendingDecision;
       if (!battle || battle.type !== "턴전투") return "현재 진행 중인 전투가 없습니다.";
       if (!battle.buffs) battle.buffs = { user: {}, monster: {} };
 
-      let output = "";
+      let output = basetxt;
       let attackMultiplier = 1.0;
       let defendMultiplier = 1.0;
       let skipPlayerAttack = false;
@@ -872,22 +903,82 @@ const Game = {
       if ((battle.buffs.monster.guardBreakTurns || 0) > 0) monsterDef = Math.floor(monsterDef * 0.5);
 
       // ── 플레이어 타격
-      if (!skipPlayerAttack && !(action === "일반" && battle.specialUsed)) {
-        let baseDmg = Math.round(user.공격력 * attackMultiplier - (monsterDef * 0.5));
-        if (battle.buffs.user.charge) {
-          baseDmg = Math.round(baseDmg * 2.0);
-          battle.buffs.user.charge = false;
-        }
-        const damage = Math.max(baseDmg, 0);
-        battle.monster.체력 -= damage;
-        output += `플레이어가 [${action}]으로 ${Game.functions.formatNumber(damage)}의 피해를 주었습니다. (남은 몬스터 체력: ${Game.functions.formatNumber(battle.monster.체력)})\n`;
-      } else if (action === "일반" && battle.specialUsed) {
-        output += "플레이어의 특수 기술 효과로 추가 일반 공격은 발생하지 않았습니다.\n";
+      function player_attack(user, battle, attackMultiplier, monsterDef, skipPlayerAttack){
+        let output = "";
+        if (!skipPlayerAttack && !(action === "일반" && battle.specialUsed)) {
+          let baseDmg = Math.round(user.공격력 * attackMultiplier - (monsterDef * 0.5));
+          if (battle.buffs.user.charge) {
+            baseDmg = Math.round(baseDmg * 2.0);
+            battle.buffs.user.charge = false;
+          }
+          const damage = Math.max(baseDmg, 0);
+          battle.monster.체력 -= damage;
+          output += `플레이어가 [${action}]으로 ${Game.functions.formatNumber(damage)}의 피해를 주었습니다. (남은 몬스터 체력: ${Game.functions.formatNumber(battle.monster.체력)})\n`;
+        } else if (action === "일반" && battle.specialUsed) {
+          output += "플레이어의 특수 기술 효과로 추가 일반 공격은 발생하지 않았습니다.\n";
+        } 
+
+        return output;
       }
 
-      // ── 플레이어 사망 처리
-      if (user.체력 <= 0) {
-        output += "플레이어가 패배하였습니다. 게임 오버!\n";
+      // -- 몬스터 공격
+      function monster_attack(user, battle, defendMultiplier, skipPlayerAttack){
+        let output = "";
+        // ── 몬스터 특수능력 (확률)
+        // TODO
+        // 아니 몬스터 특수 능력 있는겨?
+        if ((!skipPlayerAttack && (battle.monster.MP || 0) > 0 && battle.monster.특수능력) && Math.random() < 0.3 ) {
+            if(battle.monster.체력 <= 0) output += `\n${battle.monster.이름} : 이대로 쓰러질순 없다!!!\n\n`;
+            output += `${battle.monster.이름}가 특수능력을 사용합니다!\n`;
+            try {
+              let abilityFn = battle.monster.특수능력;
+              let fn = null;
+              if (typeof abilityFn === "function") fn = abilityFn;
+              else if (abilityFn && typeof abilityFn.능력 !== "undefined") {
+                fn = typeof abilityFn.능력 === "function" ? abilityFn.능력 : (0, eval)(abilityFn.능력);
+              }
+              if (typeof fn === "function") fn(battle.monster, user);
+            } catch (e) {
+              console.warn("몬스터 특수능력 실행 오류:", e);
+            }
+            battle.monster.MP = Math.max(0, (battle.monster.MP || 0) - (battle.monster?.특수능력?.MP소모 || 0));
+            output += `${battle.monster.이름} 특수능력 사용 후 남은 MP: ${battle.monster.MP}\n`;
+            battle.initiative = "player";
+            user.pendingDecision = battle;
+        }
+        else if(battle.monster.체력 > 0){
+          // ── 몬스터 반격
+          const userSpeed = Number(user.속도 || 0);
+          const monSpeed = Number(battle.monster.속도 || 0);
+          let counterHitChance = (Number(user.명중률) || 0) + (userSpeed * 0.01) - (monSpeed * 0.01);
+          if (battle.buffs.user.evade) counterHitChance -= 0.5;
+          if (Math.random() > counterHitChance) {
+            output += `${battle.monster.이름}의 공격이 빗나갔습니다!\n`;
+          } else {
+            const monsterDamage = Math.max(0, Math.round((battle.monster.공격력 * defendMultiplier) - ((user.방어력 || 0) * 0.5)));
+            user.체력 -= monsterDamage;
+            output += `${battle.monster.이름}의 공격! ${Game.functions.formatNumber(monsterDamage)}의 피해를 받았습니다. (플레이어 체력: ${Game.functions.formatNumber(user.체력)})\n`;
+          }
+          if (battle.buffs.user.evade) battle.buffs.user.evade = false;
+          if ((battle.buffs.monster.guardBreakTurns || 0) > 0) battle.buffs.monster.guardBreakTurns -= 1;
+        }
+
+        return output;
+      }
+
+      // 선공 처리
+      if (battle.initiative == "player") {
+        output +=player_attack(user, battle, attackMultiplier, monsterDef, skipPlayerAttack);
+        output +=monster_attack(user, battle, defendMultiplier, skipPlayerAttack);
+      }
+      else{
+        output +=monster_attack(user, battle, defendMultiplier, skipPlayerAttack);
+        output +=player_attack(user, battle, attackMultiplier, monsterDef, skipPlayerAttack);
+      }
+
+      
+
+      function revival(user){
         user.코인 = 0;
         user.위치 = "시작의 마을";
         user.세부위치 = "여관";
@@ -895,7 +986,30 @@ const Game = {
         const maxHP = Game.functions.getMaxHP(user);
         const maxMP = Game.functions.getMaxMP(user);
         user.체력 = maxHP; user.MP = maxMP;
-        return output + `당신은 부활하였습니다. 시작의 마을 여관에서 체력이 회복되었습니다. (HP: ${Game.functions.formatNumber(maxHP)}, MP: ${Game.functions.formatNumber(maxMP)})\n`;
+        return `당신은 부활하였습니다. 시작의 마을 여관에서 체력이 회복되었습니다. (HP: ${Game.functions.formatNumber(maxHP)}, MP: ${Game.functions.formatNumber(maxMP)})\n`;
+      }
+
+      if (user.체력 <= 0 && battle.monster.체력 <= 0){
+        const rd = Math.random()
+        output += `당신은 ${battle.monster.이름}을(를) 쓰러뜨렸지만 크나큰 상처를 입었습니다...\n`;
+        if (rd >= 0.5){
+          output += `하지만 당신은 버텨냈고, 잠시 눈앞이 어두웠지만 이내 강해짐을 느낍니다.\n`;
+          output += `(체력이 ${Game.functions.getMaxHP(user) * 0.1} 회복 되었습니다.)\n`;
+          user.체력 += Game.functions.getMaxHP(user) * 0.1;
+
+        }
+        else{
+          output += `결국 버티지 못하고 당신은 쓰러지고 말았습니다.. 게임 오버!\n`;
+          
+          return output + revival(user);
+        }
+      }
+
+      // ── 플레이어 사망 처리
+      if (user.체력 <= 0) {
+        output += "플레이어가 패배하였습니다. 게임 오버!\n";
+        
+        return output + revival(user);
       }
 
       // ── 몬스터 사망 처리 (+ 전술 1% 드롭)
@@ -904,13 +1018,17 @@ const Game = {
           output += `보스 ${battle.monster.이름}을 패배시켰습니다!\n`;
           const expReward = battle.monster.경험치 * 5 || 0;
           const coinReward = expReward * 3;
-          user.경험치 += expReward;
-          user.코인 += coinReward;
-          output += `보상: ${Game.functions.formatNumber(expReward)} 경험치와 ${Game.functions.formatNumber(coinReward)} 코인 지급!\n`;
+
+          //output += `보상: ${Game.functions.formatNumber(expReward)} 경험치와 ${Game.functions.formatNumber(coinReward)} 코인 지급!\n`;
           user.pendingDecision = null;
           user.보스스토리완료 = false;
           user.보스스토리진행중 = false;
           user.퀘스트완료[battle.monster.이름] = true;
+
+          output += user.getreward(expReward, coinReward, Game.variables.rewardMult);
+
+          const levelUpMsg = Game.functions.레벨업확인(sender);
+          if (levelUpMsg) output += levelUpMsg;
 
           const learnMsg = await Game.functions.tryLearnTactic(sender);
           if (learnMsg) output += learnMsg;
@@ -919,12 +1037,15 @@ const Game = {
         } else {
           output += `${battle.monster.이름}을 패배시켰습니다!\n`;
           const expReward = battle.monster.경험치 || 0;
-          const coinReward = expReward * 3;
-          user.경험치 += expReward;
-          user.코인 += coinReward;
+          const coinReward = expReward * 10;
+
           battle.monster.체력 = battle.monsterHP;
           user.pendingDecision = null;
-          output += `보상: ${Game.functions.formatNumber(expReward)} 경험치와 ${Game.functions.formatNumber(coinReward)} 코인 지급!\n`;
+          
+          output += user.getreward(expReward, coinReward, Game.variables.rewardMult);
+          
+          const levelUpMsg = Game.functions.레벨업확인(sender);
+          if (levelUpMsg) output += levelUpMsg;
 
           const learnMsg = await Game.functions.tryLearnTactic(sender);
           if (learnMsg) output += learnMsg;
@@ -932,47 +1053,6 @@ const Game = {
           return output;
         }
       }
-
-      // ── 몬스터 특수능력 (확률)
-      if (!skipPlayerAttack && (battle.monster.MP || 0) > 0 && battle.monster.특수능력) {
-        if (Math.random() < 0.3) {
-          output += "몬스터가 특수능력을 사용합니다!\n";
-          try {
-            let abilityFn = battle.monster.특수능력;
-            let fn = null;
-            if (typeof abilityFn === "function") fn = abilityFn;
-            else if (abilityFn && typeof abilityFn.능력 !== "undefined") {
-              fn = typeof abilityFn.능력 === "function" ? abilityFn.능력 : (0, eval)(abilityFn.능력);
-            }
-            if (typeof fn === "function") fn(battle.monster, user);
-          } catch (e) {
-            console.warn("몬스터 특수능력 실행 오류:", e);
-          }
-          battle.monster.MP = Math.max(0, (battle.monster.MP || 0) - (battle.monSTER?.특수능력?.MP소모 || 0));
-          output += `몬스터 특수능력 사용 후 남은 MP: ${battle.monster.MP}\n`;
-          battle.initiative = "player";
-          user.pendingDecision = battle;
-          const levelUpMsg = Game.functions.레벨업확인(sender);
-          if (levelUpMsg) output += levelUpMsg;
-          output += "플레이어의 공격 차례입니다. (사용 가능한 명령어: 공격, 일반, 방어, 전술, 특수)";
-          return output;
-        }
-      }
-
-      // ── 몬스터 반격
-      const userSpeed = Number(user.속도 || 0);
-      const monSpeed = Number(battle.monster.속도 || 0);
-      let counterHitChance = (Number(user.명중률) || 0) + (userSpeed * 0.01) - (monSpeed * 0.01);
-      if (battle.buffs.user.evade) counterHitChance -= 0.5;
-      if (Math.random() > counterHitChance) {
-        output += "몬스터의 반격이 빗나갔습니다!\n";
-      } else {
-        const monsterDamage = Math.max(0, Math.round((battle.monster.공격력 * defendMultiplier) - ((user.방어력 || 0) * 0.5)));
-        user.체력 -= monsterDamage;
-        output += `몬스터의 반격! ${Game.functions.formatNumber(monsterDamage)}의 피해를 받았습니다. (플레이어 체력: ${Game.functions.formatNumber(user.체력)})\n`;
-      }
-      if (battle.buffs.user.evade) battle.buffs.user.evade = false;
-      if ((battle.buffs.monster.guardBreakTurns || 0) > 0) battle.buffs.monster.guardBreakTurns -= 1;
 
       // ── 장비 능력 트리거
       const equipmentList = await Game.variables.game.장비;
@@ -999,8 +1079,8 @@ const Game = {
       }
 
       battle.initiative = "player";
-      const levelUpMsg = Game.functions.레벨업확인(sender);
-      if (levelUpMsg) output += levelUpMsg;
+      // const levelUpMsg = Game.functions.레벨업확인(sender);
+      // if (levelUpMsg) output += levelUpMsg;
       user.pendingDecision = battle;
       output += "플레이어의 공격 차례입니다. (사용 가능한 명령어: 공격, 일반, 방어, 전술, 특수)";
       return output;
@@ -1146,7 +1226,7 @@ const Game = {
       return maxMP;
     },
     formatNumber: (num) => {
-      if (num < 10000) return num.toString();
+      if (num < 10000) return `${num.toFixed(0)}`;
       const units = ["만","억","조","경","해","자","양","구","간","정","재","극"];
       let unitIndex = Math.floor((Math.log10(num) - 4) / 4);
       if (unitIndex < 0) unitIndex = 0;
